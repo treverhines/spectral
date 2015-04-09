@@ -3,10 +3,12 @@
 functions used for spectral methods
 '''
 import numpy as np
+import sympy as sp
+from scipy.integrate import quadrature
 
-def exponential_term(x,n,a=0.0,b=np.pi,diff=0):
+def cosine_term(x,n,a=0.0,b=np.pi,diff=0):
   '''
-  returns the function exp(i*2*pi*n*(x-a)/(b-a)) or its derivatives 
+  returns the function cos(pi*n*(x-a)/(b-a)) or its derivatives 
 
   PARAMETERS
   ----------
@@ -18,10 +20,18 @@ def exponential_term(x,n,a=0.0,b=np.pi,diff=0):
   '''
   assert n >= 0
   assert diff >= 0
+
   x = np.asarray(x)
-  i = complex(0,1.0)
-  exponent = i*n*2.0*np.pi*(x-a)/(b-a)
-  return (i*n*2.0*np.pi/(b-a))**diff*np.exp(exponent) 
+  scale = np.pi/(b-a)
+  x_scale = scale*(x - a)
+  if diff%4 == 0:
+    return (n*scale)**diff*np.cos(n*x_scale)
+  elif diff%4 == 1:
+    return ((n*scale)**diff)*(-1)*np.sin(n*x_scale)
+  elif diff%4 == 2:
+    return ((n*scale)**diff)*(-1)*np.cos(n*x_scale)
+  elif diff%4 == 3:
+    return (n*scale)**diff*np.sin(n*x_scale)
 
 def cosine_roots(n,a=0.0,b=np.pi):
   '''
