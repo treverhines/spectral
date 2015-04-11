@@ -1,16 +1,26 @@
 #!/usr/bin/env python
 import numpy as np
-import matplotlib.pyplot as plt
 from misc import Timer
+from scipy.interpolate import interp1d
 timer = Timer()
 
 def io_check(fin):
-  def fout(self,edge):
-    is_edge = isinstance(edge,Edge)
-    if is_edge:
-      edge = [edge]
+  def fout(self,*args):
+    if len(args) == 2:
+      is_edge = False
+      xy_list = args[0]
+      uv_list = args[1]
 
-    out = fin(self,edge)
+    elif len(args) == 1:
+      edge = args[0]  
+      is_edge = isinstance(edge,Edge)
+      if is_edge:
+        edge = [edge]
+
+      xy_list = np.array([e.xy1 for e in edge]) 
+      uv_list = np.array([e.uv for e in edge]) 
+
+    out = fin(self,xy_list,uv_list)
     if is_edge:
       out = out[0]
 
@@ -28,68 +38,59 @@ class TopologyError(Exception):
     return self.val
 
 class Edge(object):
-  def __init__(self,v1,v2):
-    self.v1 = np.asarray(v1)
-    self.v2 = np.asarray(v2)
-    self.dv = self.v2 - self.v1
-    self.x = np.array([v1[0],v2[0]])
-    self.y = np.array([v1[1],v2[1]])
+  def __init__(self,xy1,xy2):
+    self.xy1 = np.asarray(xy1)
+    self.xy2 = np.asarray(xy2)
+    self.uv = self.xy2 - self.xy1
 
   @io_check
-  def is_parallel(self,edge):
+  def is_parallel(self,xy_list,uv_list):
     '''
     returns True when edge is parallel to self
     '''
-    dv_list = np.array([e.dv for e in edge]) 
-    a = np.cross(dv_list,self.dv)
+    a = np.cross(uv_list,self.uv)
     cond1 = (a == 0)          
     return cond1
 
   @io_check
-  def is_collinear(self,edge):
+  def is_collinear(self,xy_list,uv_list):
     '''
     returns True when edge is collinear with self
     '''
-    v1_list = np.array([e.v1 for e in edge]) 
-    a = np.cross(v1_list-self.v1,self.dv)             
-    cond1 = self.is_parallel(edge)
+    a = np.cross(xy_list-self.xy1,self.uv)             
+    cond1 = self.is_parallel(xy_list,uv_list)
     cond2 = (a == 0)
     return cond1 & cond2
 
   @io_check
-  def is_overlapping(self,edge):
+  def is_overlapping(self,xy_list,uv_list):
     '''
     returns True if there is a finite width of overlap between edge and self.
     Overlapping vertices do not count as an overlap
     '''
-    v1_list = np.array([e.v1 for e in edge]) 
-    dv_list = np.array([e.dv for e in edge]) 
-    a = np.sum((v1_list-self.v1)*self.dv,1)
-    b = np.sum((self.v1-v1_list)*dv_list,1)
-    c = np.dot(self.dv,self.dv)
-    d = np.sum(dv_list*dv_list,1)
-    cond1 = self.is_collinear(edge)
+    a = np.sum((xy_list-self.xy1)*self.uv,1)
+    b = np.sum((self.xy1-xy_list)*uv_list,1)
+    c = np.dot(self.uv,self.uv)
+    d = np.sum(uv_list*uv_list,1)
+    cond1 = self.is_collinear(xy_list,uv_list)
     cond2 = (a > 0) & (a < c)
     cond3 = (b > 0) & (b < d)
     return cond1 & (cond2 | cond3)
       
 
   @io_check
-  def is_intersecting(self,edge):
+  def is_intersecting(self,xy_list,uv_list):
     '''
     returns True if there is any point intersection between edge and self.
     Overlapping vertices does not count as an intersection.
     '''
-    v1_list = np.array([e.v1 for e in edge]) 
-    dv_list = np.array([e.dv for e in edge]) 
+    cond1 = self.is_parallel(xy_list,uv_list) == False
+    xy_list = xy_list[cond1]
+    uv_list = uv_list[cond1]
 
-    cond1 = self.is_parallel(edge) == False
-    v1_list = v1_list[cond1]
-    dv_list = dv_list[cond1]
-
-    a = np.cross(v1_list-self.v1,dv_list)
-    b = np.cross(self.v1-v1_list,self.dv)
-    c = np.cross(self.dv,dv_list)
+    a = np.cross(xy_list-self.xy1,uv_list)
+    b = np.cross(self.xy1-xy_list,self.uv)
+    c = np.cross(self.uv,uv_list)
     t = a/c
     u = -b/c
     cond2 = (t >= 0.0) & (t <= 1.0) & (u >= 0.0) & (u <= 1.0)
@@ -97,23 +98,20 @@ class Edge(object):
     return cond1
 
   @io_check
-  def intersection(self,edge):
+  def intersection(self,xy_list,uv_list):
     '''
     returns the point of intersection between edge and self if it exists
     '''
-    v1_list = np.array([e.v1 for e in edge]) 
-    dv_list = np.array([e.dv for e in edge]) 
-
-    if any(self.is_intersecting(edge) == False):
+    if any(self.is_intersecting(xy_list,uv_list) == False):
       raise TopologyError('an intersection point does not exist')
 
-    a = np.cross(v1_list-self.v1,dv_list)
-    b = np.cross(self.v1-v1_list,self.dv)    
-    c = np.cross(self.dv,dv_list)
-    d = np.cross(dv_list,self.dv) 
+    a = np.cross(xy_list-self.xy1,uv_list)
+    b = np.cross(self.xy1-xy_list,self.uv)    
+    c = np.cross(self.uv,uv_list)
+    d = np.cross(uv_list,self.uv) 
     t = a/c
     u = b/d
-    return self.v1 + t[:,None]*self.dv
+    return self.xy1 + t[:,None]*self.uv
 
 class JordanCurve(object):
   def __init__(self,points):
@@ -146,13 +144,29 @@ class JordanCurve(object):
 
     self.edges += [e]
 
-    self.x = np.array([e.x[0] for e in self.edges]+[self.edges[0].x[0]])
-    self.y = np.array([e.y[0] for e in self.edges]+[self.edges[0].y[0]])
+    self.x = np.array([e.xy1[0] for e in self.edges]+[self.edges[0].xy1[0]])
+    self.y = np.array([e.xy1[1] for e in self.edges]+[self.edges[0].xy1[1]])
+    t = np.linspace(0,1,N+1)
+    self.xinterp = interp1d(t,self.x)
+    self.yinterp = interp1d(t,self.y)
 
-  def contains(self,point):
-    line = Edge([min(self.x),point[1]],point)
-    count = np.sum(line.is_intersecting(self.edges))
-    return bool(count%2)
+  def contains(self,points):
+    minx = min(self.x)
+    if len(np.shape(points)) == 1:
+      line = Edge([minx,point[1]],point)
+      count = np.sum(line.is_intersecting(self.edges))
+      return  bool(count%2)
+
+    out = np.zeros(len(points))
+    for idx,p in enumerate(points):
+      line = Edge([minx,p[1]],p)
+      count = np.sum(line.is_intersecting(self.edges))
+      out[idx] = count%2
+
+    return out.astype(bool)
+
+  def __call__(self,t):
+    return np.array([self.xinterp(t),self.yinterp(t)]).transpose()
 
 
     
