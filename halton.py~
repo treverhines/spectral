@@ -1,0 +1,70 @@
+#!/usr/bin/env python
+from __future__ import division
+import numpy as np
+
+class Prime(object):
+  '''
+  enumerates over N prime numbers
+  '''  
+  def __init__(self,N):
+    self.N = N
+    self.n = 0
+
+  def __iter__(self):
+    return self
+
+  def next(self):
+    if self.n == self.N:
+      raise StopIteration
+
+    elif self.n == 0:
+      self.primes = [2]
+      self.n += 1
+
+
+    else:
+      test = self.primes[-1] + 1
+      while True:
+        if not any(test/p == test//p for p in self.primes):
+          self.primes += [test]  
+          self.n += 1
+          break 
+
+        test += 1
+
+    out = self.n-1,self.primes[-1]
+    return out
+
+def halton(N,dim=1):
+  '''
+  returns a halton sequence using the algorithm 
+  from http://en.wikipedia.org/wiki/Halton_sequence
+
+  This function becomes noticeably slow for N*dim > 100000
+  '''
+  out = np.zeros((N,dim))
+  for d,base in Prime(dim):
+    for idx in range(N):  
+      result = 0
+      f = 1
+      i = (idx+1)
+      while i > 0:
+        f = f/base
+        result = result + f*(i%base)
+        i = i//base
+
+      out[idx,d] = result
+
+  return out
+      
+    
+  
+
+
+
+
+
+
+
+    
+    

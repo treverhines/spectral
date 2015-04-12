@@ -157,13 +157,14 @@ class JordanCurve(object):
       count = np.sum(line.is_intersecting(self.edges))
       return  bool(count%2)
 
-    out = np.zeros(len(points))
-    for idx,p in enumerate(points):
-      line = Edge([minx,p[1]],p)
-      count = np.sum(line.is_intersecting(self.edges))
-      out[idx] = count%2
+    else:
+      out = np.zeros(len(points))
+      for idx,p in enumerate(points):
+        line = Edge([minx,p[1]],p)
+        count = np.sum(line.is_intersecting(self.edges))
+        out[idx] = count%2
 
-    return out.astype(bool)
+      return out.astype(bool)
 
   def __call__(self,t):
     return np.array([self.xinterp(t),self.yinterp(t)]).transpose()
