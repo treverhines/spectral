@@ -115,6 +115,7 @@ class Edge(object):
 
 class JordanCurve(object):
   def __init__(self,points):
+    points = np.asarray(points)
     assert len(np.shape(points)) == 2
     assert np.shape(points)[1] == 2
     N = np.shape(points)[0]
@@ -146,21 +147,25 @@ class JordanCurve(object):
 
     self.x = np.array([e.xy1[0] for e in self.edges]+[self.edges[0].xy1[0]])
     self.y = np.array([e.xy1[1] for e in self.edges]+[self.edges[0].xy1[1]])
-    t = np.linspace(0,1,N+1)
+    edge_length = np.sqrt(np.diff(self.x)**2 + np.diff(self.y)**2)
+    total_length = np.array([np.sum(edge_length[:i]) for i in range(N+1)])
+    t = total_length/total_length[-1]               
     self.xinterp = interp1d(t,self.x)
     self.yinterp = interp1d(t,self.y)
 
-  def contains(self,points):
-    minx = min(self.x)
+  def contains(self,points,outside=None):
+    if outside is None:
+      outside = [1e10,1e10]
+
     if len(np.shape(points)) == 1:
-      line = Edge([minx,point[1]],point)
+      line = Edge(outside,point)
       count = np.sum(line.is_intersecting(self.edges))
       return  bool(count%2)
 
     else:
       out = np.zeros(len(points))
       for idx,p in enumerate(points):
-        line = Edge([minx,p[1]],p)
+        line = Edge(outside,p)
         count = np.sum(line.is_intersecting(self.edges))
         out[idx] = count%2
 
