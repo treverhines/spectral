@@ -21,7 +21,6 @@ class Prime(object):
       self.primes = [2]
       self.n += 1
 
-
     else:
       test = self.primes[-1] + 1
       while True:
@@ -32,71 +31,64 @@ class Prime(object):
 
         test += 1
 
-    out = self.n-1,self.primes[-1]
+    out = self.primes[-1]
     return out
 
-def halton(N,dim=1):
+class Halton(object):
+  def __init__(self,dim=1,start=0,skip=1):
+    self.count = start
+    self.skip = skip
+    self.dim = dim
+
+  def __call__(self,N):
+    out = halton(N,self.dim,self.count,self.skip)
+    self.count += N*self.skip    
+    return out
+
+  def qunif(self,low=0.0,high=1.0,N=50):
+    return self(N)*(high-low) + low
+
+  def qnorm(self,mu=0.0,sigma=1.0,N=50):
+    self.dim *= 2
+    unif = self(N)
+    unif1 = unif[:,:self.dim/2]
+    unif2 = unif[:,self.dim/2:]
+    out = np.sqrt(-2*np.log(unif1))*np.cos(2*np.pi*unif2)
+    self.dim /= 2
+    return out*sigma + mu
+
+def halton(N,dim=1,start=0,skip=1):
   '''
   returns a halton sequence using the algorithm 
   from http://en.wikipedia.org/wiki/Halton_sequence
   '''
   out = np.zeros((N,dim))
-  for d,base in Prime(dim):
-    i = np.arange(1,N+1)
+  for d,base in enumerate(Prime(dim)):
+    i = start + 1 + np.arange(0,skip*N,skip)
     f = np.ones(N)
-    result = np.zeros(N)
     while any(i > 0):
       f = f/base
-      result += f*(i%base)
+      out[:,d] += f*(i%base)
       i //= base 
     
-    out[:,d] = result
-
   return out
 
-def qunif(N,low=0.0,high=1.0):
+def qunif(low=0.0,high=1.0,N=50,dim=1,start=0,skip=1):
   '''
   quasi-uniform random number generator
   '''
-  assert np.shape(low) == np.shape(high)
-  assert len(np.shape(low)) <= 1
-  if len(np.shape(low)) == 1:
-    low = np.asarray(low)
-    high = np.asarray(high)
-    dim = len(low)
-    shape = (N,dim)
-
-  elif len(np.shape(low)) == 0:
-    dim = 1
-    shape = (N,)
-
-  out = (halton(N,dim)*(high-low) + low)
-  out = np.reshape(out,shape)
-  return out  
+  return halton(N,dim,start,skip)*(high-low) + low
   
-def qnorm(N,mu=0.0,sigma=1.0):  
+def qnorm(mu=0.0,sigma=1.0,N=50,dim=1,start=0,skip=1):
   ''' 
   quasi-normal random number generator
   '''
-  assert np.shape(mu) == np.shape(sigma)
-  assert len(np.shape(mu)) <= 1
-  if len(np.shape(mu)) == 1:
-    mu = np.asarray(mu)
-    sigma = np.asarray(sigma)
-    dim = len(mu)
-    shape = (N,dim)
-
-  elif len(np.shape(mu)) == 0:
-    dim = 1
-    shape = (N,)
-
-  unif = halton(N,2*dim)
+  unif = halton(N,2*dim,start,skip)
   unif1 = unif[:,:dim]
   unif2 = unif[:,dim:]
   out = np.sqrt(-2*np.log(unif1))*np.cos(2*np.pi*unif2)
-  out = (out*sigma + mu)
-  out = np.reshape(out,shape)
-  return out  
+  return out*sigma + mu
+
 
       
     

@@ -2,8 +2,134 @@
 import numpy as np
 from misc import Timer
 from scipy.interpolate import interp1d
-timer = Timer()
+from shapely.geometry import Polygon
+from shapely.geometry import Point
+from shapely.geometry import LineString
+from descartes import PolygonPatch
 
+import logging
+logger = logging.getLogger(__name__)
+
+def listify(a):
+  out = []
+  for i in a:
+    if hasattr(i,'__iter__'):
+      out += [listify(i)]
+    else:
+      out += [i]
+
+  return out
+  
+class NodeCollection(dict):
+  def __init__(self):
+    dict.__init__(self)
+    self['nodes'] = np.zeros((0,2))       
+    self['nearest'] = np.zeros(0)       
+    self['total'] = 0
+
+  def add(self,nodes,name):    
+    nodes = np.asarray(nodes,dtype=float)
+    self['nodes'] = np.concatenate((self['nodes'],nodes))
+
+    new_indices = np.arange(self['total'],self['total']+len(nodes))
+    self['total'] += len(nodes)
+
+    old_indices = self.get(name,np.zeros(0,dtype=int))
+    self[name] = np.concatenate((old_indices,new_indices))
+    #self._compute_nearest()
+
+  def compute_nearest(self):  
+    out = np.zeros(self['total'])
+    if self['total'] > 1:      
+      nidx = range(self['total'])
+      for idx in range(self['total']):
+        popped = nidx.pop(idx)
+        dist = np.sqrt(np.sum((self['nodes'][nidx] - self['nodes'][idx])**2,1))
+        min_dist = np.min(dist)
+        nidx.insert(popped,idx)
+        if min_dist == 0:
+          logger.warning(
+            'Node %s, %s, is a duplicate node' % (idx,self['nodes'][idx]))
+        out[idx] = np.min(dist)
+
+    self['nearest'] = out 
+     
+class Domain(Polygon):
+  def __init__(self,ext_curves,
+                   ext_names,
+                   int_curves=None,
+                   int_names=None):
+    '''
+    Define domain by a collection of coordinate pairs
+
+    Parameters
+    ----------
+      ext_curve: a list of coordinate pairs defining each curve of the domain 
+        exterior.  The curves must be ordered such that the end of one curve
+        corresponds with the beginning of the next curve
+
+      ext_names: names for each exterior curve
+
+      int_curves: A sequence of objects matching the criterior for ext_curve
+
+      int_names: A sequence of objects matching the criterior for ext_names
+    '''  
+    if int_curves is None:
+      int_curves = []
+
+    if int_names is None:
+      int_names = []
+
+    ext_curves = listify(ext_curves)
+    ext_names = listify(ext_names)
+    int_curves = listify(int_curves)
+    int_names = listify(int_names)
+
+    assert len(ext_curves) == len(ext_names)
+    assert len(int_curves) == len(int_names)
+    assert all(len(c) == len(n) for c,n in zip(int_curves,int_names))
+
+    self.curves = {}
+    ext_coords = []
+    for c,n in zip(ext_curves,ext_names):
+      self.curves[n] = LineString(c)
+      ext_coords += c
+
+    int_poly = []
+    for C,N in zip(int_curves,int_names):
+      int_coords = []
+      for c,n in zip(C,N):
+        int_coords += c
+        self.curves[n] = LineString(c)
+
+      int_poly += [int_coords]
+  
+    Polygon.__init__(self,ext_coords,int_poly)        
+    assert self.is_valid
+
+  def patch(self,*args,**kwargs):
+    return PolygonPatch(self,*args,**kwargs)
+
+  def contains(self,points):
+    out = np.zeros(len(points))
+    for idx,val in enumerate(points):
+      p = Point(val)
+      out[idx] = Polygon.contains(self,p)
+    
+    return out.astype(bool)
+
+  def __call__(self,t,name):
+    if hasattr(t,'__iter__'):
+      out = np.zeros((len(t),2))
+      for itr,val in enumerate(t):
+        out[itr] = np.array(self.curves[name].interpolate(val,normalized=True))
+
+    else:
+      out = np.array(self.curves[name].interpolate(t,normalized=True))
+
+    return out
+
+timer = Timer()
 def io_check(fin):
   def fout(self,*args):
     if len(args) == 2:

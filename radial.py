@@ -8,30 +8,66 @@ _EPS = sympy.symbols('EPS')
 
 class RBF(object):
   def __init__(self,expr):    
-    assert _R in expr, (
+    assert expr.has(_R), (
       'RBF expression does not contain _R')
     
-    assert _EPS in expr, (
+    assert expr.has(_EPS), (
       'RBF expression does not contain _EPS')
     self.R_expr = expr
     self.diff_dict = {}
-   
-  def __call__(self,x,c,eps=1.0,diff=None):
+
+  def __call__(self,x,c,eps=None,diff=None):
+    '''
+    D: number of dimensions
+    N: number of sample points
+    M: numer of radii
+    
+    x: shape (N,) or (N,D)
+    c: shape (M,) or (M,D)
+    out: shape (N,M)
+
+    shapes get converted to (N,M,D) arrays
+
+    '''
     x = np.asarray(x)
-    c = np.asarray(c)    
-    if len(np.shape(x)) == 1:
-      x = x[:,None]
+    c = np.asarray(c)   
+    xshape = np.shape(x)
+    cshape = np.shape(c)
+    assert (len(xshape) == 1) | (len(xshape) == 2), (
+      'x must be a 1-D or 2-D array')
+    assert (len(cshape) == 1) | (len(cshape) == 2), (
+      'c must be a 1-D or 2-D array')
 
-    if len(np.shape(c)) == 0:
-      c = c[None]
+    if len(xshape) == 1:
+      x = x[:,None,None]
 
-    assert len(np.shape(x)) == 2, (
-      'x must be either a 1 or 2 dimensional array')   
-    assert len(np.shape(c)) == 1, (
-      'center must be a scalar or 1 dimensional array')
-    dim = np.shape(x)[1]
-    assert np.shape(c)[0] == dim, (
-      'dimensions of center must equal the dimensions of x')
+    if len(cshape) == 1:
+      c = c[None,:,None]
+
+    if len(xshape) == 2:
+      x = x[:,None,:]
+
+    if len(cshape) == 2:
+      c = c[None,:,:]
+
+    N = np.shape(x)[0]
+    M = np.shape(c)[1]
+    assert np.shape(x)[2] == np.shape(c)[2], (
+      'if x and c are 2-D arrays then their second dimensions must have the '
+      'same length')
+    dim = np.shape(x)[2]
+    if eps is None:
+      eps = np.ones(M)
+
+    eps = np.asarray(eps)
+    assert len(np.shape(eps)) == 1, (
+      'eps must be a 1D array')
+
+    assert len(eps) == M, (
+      'length of eps must be equal to the number of centers')
+
+    x = np.einsum('ijk->kij',x)
+    c = np.einsum('ijk->kij',c)
 
     if diff is None:
       diff = (0,)*dim
@@ -46,7 +82,8 @@ class RBF(object):
     if diff not in self.diff_dict:
       self._make_function(diff)
 
-    return self.diff_dict[diff](*(tuple(x.transpose())+tuple(c)+(eps,)))
+    args = (tuple(x)+tuple(c)+(eps,))    
+    return self.diff_dict[diff](*args)
 
   def _make_function(self,diff):
     dim = len(diff)
@@ -62,21 +99,17 @@ class RBF(object):
     self.diff_dict[diff] = sympy.lambdify(x_sym+c_sym+(_EPS,),expr,'numpy')
 
 _FUNCTION_DOC = '''
-  evaluate the radial basis function (RBF) and its derivates     
+  evaluates M radial basis functions (RBFs) with arbitary dimension at N points.
 
   Parameters                                       
   ----------                                         
-    x: (1D or 2D array) locations to evaluate the RBF.  If two dimensional 
-      array is given then the first axis length must be the number of points 
-      and the second axis length must be the number of spatial dimensions 
+    x: ((N,) or (N,D) array) D dimensional locations to evaluate the RBF
                                                                           
-    center: (scalar or 1D) center of the RBF. If 1D array is given then its 
-      length must be the number of spatial dimensions which must also equal   
-      the length of the second axis for x                              
+    centers: ((M,) or (M,D) array) D dimensional centers of each RBF
                                                                  
-    eps: (scalar, default=1.0) scales the width of the RBF.                 
+    eps: ((M,) array, default=np.ones(M)) Scale parameter for each RBF
                                                                            
-    diff: (tuple, default=(0,)*dim) a tuple whos length is equal to the number 
+    diff: ((D,) tuple, default=(0,)*dim) a tuple whos length is equal to the number 
       of spatial dimensions.  Each value in the tuple must be an integer
       indicating the order of the derivative in that spatial dimension.  For 
       example, if the the spatial dimensions of the problem are 3 then 
@@ -85,13 +118,13 @@ _FUNCTION_DOC = '''
 
   Returns
   -------
-    out: 1D array with length equal to the first dimension of x
+    out: (N,M) array for each M RBF evaluated at the N points
 
   Note
   ----
     the derivatives are computed symbolically in Sympy and then lambdified to 
     evaluate the expression with the provided values.  The lambdified functions
-    are stored in the scope of the radial module and will be recalled if 
+    are cached in the scope of the radial module and will be recalled if 
     a value for diff is used more than once in the Python session.        
 '''
 
@@ -112,3 +145,14 @@ def ga(*args,**kwargs):
   return _GA(*args,**kwargs)
 
 ga.__doc__ += _FUNCTION_DOC
+
+_MQ = RBF(sympy.sqrt(1 + (_EPS*_R)**2))
+def mq(*args,**kwargs):
+  '''                                                                                                            
+  multiquadratic
+  '''
+  return _MQ(*args,**kwargs)
+
+mq.__doc__ += _FUNCTION_DOC
+
+
