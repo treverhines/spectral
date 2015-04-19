@@ -98,6 +98,91 @@ class RBF(object):
 
     self.diff_dict[diff] = sympy.lambdify(x_sym+c_sym+(_EPS,),expr,'numpy')
 
+class RBFInterpolant(object):
+  '''
+  An RBF interpolant for a given set of collocation points and values
+
+    D: number of domain dimensions
+    R: number of range dimensions
+    N: number of collocation points
+    
+    x: (N,) or (N,D)
+    eps: (N,)
+    value: (N,) or (N,R) 
+    alpha: (N,) or (N,R)
+
+    output: (N,R)
+
+    if D or R are not given then they are assumed 1
+  '''
+  def __init__(self,
+               x,
+               eps, 
+               value=None,
+               alpha=None,
+               rbf=None):
+    if rbf is None:
+      rbf = mq
+
+    assert (value is not None) != (alpha is not None), (
+      'either val or alpha must be given')
+
+    x = np.asarray(x)
+    eps = np.asarray(eps)
+    x_shape = np.shape(x)
+    N = x_shape[0]
+    assert len(x_shape) <= 2
+    assert np.shape(eps) == (N,)
+
+    if len(x_shape) == 1:
+      x = x[:,None]
+
+    if alpha is not None:
+      alpha = np.asarray(alpha)
+      alpha_shape = np.shape(alpha)
+      assert len(alpha_shape) <= 2
+      assert alpha_shape[0] == N
+      if len(alpha_shape) == 1:
+        alpha = alpha[:,None]
+
+      alpha_shape = np.shape(alpha)
+      R = alpha_shape[1]
+   
+    if value is not None:
+      value = np.asarray(value)
+      value_shape = np.shape(value)
+      assert len(value_shape) <= 2
+      assert value_shape[0] == N
+      if len(value_shape) == 1:
+        value = value[:,None]
+
+      value_shape = np.shape(value)
+      R = value_shape[1]
+
+    if alpha is None:
+      alpha = np.zeros((N,R))
+      G = rbf(x,x,eps)
+      for r in range(R):
+        alpha[:,r] = np.linalg.solve(G,value[:,r])
+
+    self.x = x
+    self.eps = eps
+    self.alpha = alpha
+    self.R = R
+    self.rbf = rbf
+
+  def __call__(self,xitp,diff=None):
+    out = np.zeros((len(xitp),self.R))
+    for r in range(self.R):
+      out[:,r] = np.sum(self.rbf(xitp,
+                                 self.x,
+                                 self.eps,
+                                 diff=diff)*self.alpha[:,r],1)
+
+    return out 
+
+
+
 _FUNCTION_DOC = '''
   evaluates M radial basis functions (RBFs) with arbitary dimension at N points.
 

@@ -20,11 +20,36 @@ def listify(a):
 
   return out
   
+def nearest(x):
+  '''                                                                                                              
+  returns a list of distances to the nearest point for each point in
+  x. This is used to determine the shape parameter for each radial 
+  basis function      
+  '''
+  tol = 1e-4
+  x = np.asarray(x)
+  if len(np.shape(x)) == 1:
+    x = x[:,None]
+
+  N = len(x)
+  A = (x[None] - x[:,None])**2
+  A = np.sqrt(np.sum(A,2))
+  A[range(N),range(N)] = np.max(A)
+  nearest_dist = np.min(A,1)
+  nearest_idx = np.argmin(A,1)
+  if any(nearest_dist < tol):
+    print('WARNING: at least one node is a duplicate or very close to '
+          'another node')
+
+  return nearest_dist,nearest_idx
+
 class NodeCollection(dict):
+  '''
+  keeps track of nodes groups and their indices
+  ''' 
   def __init__(self):
     dict.__init__(self)
     self['nodes'] = np.zeros((0,2))       
-    self['nearest'] = np.zeros(0)       
     self['total'] = 0
 
   def add(self,nodes,name):    
@@ -36,24 +61,7 @@ class NodeCollection(dict):
 
     old_indices = self.get(name,np.zeros(0,dtype=int))
     self[name] = np.concatenate((old_indices,new_indices))
-    #self._compute_nearest()
 
-  def compute_nearest(self):  
-    out = np.zeros(self['total'])
-    if self['total'] > 1:      
-      nidx = range(self['total'])
-      for idx in range(self['total']):
-        popped = nidx.pop(idx)
-        dist = np.sqrt(np.sum((self['nodes'][nidx] - self['nodes'][idx])**2,1))
-        min_dist = np.min(dist)
-        nidx.insert(popped,idx)
-        if min_dist == 0:
-          logger.warning(
-            'Node %s, %s, is a duplicate node' % (idx,self['nodes'][idx]))
-        out[idx] = np.min(dist)
-
-    self['nearest'] = out 
-     
 class Domain(Polygon):
   def __init__(self,ext_curves,
                    ext_names,
@@ -105,7 +113,9 @@ class Domain(Polygon):
       int_poly += [int_coords]
   
     Polygon.__init__(self,ext_coords,int_poly)        
-    assert self.is_valid
+    assert self.is_valid, (
+      'domain is not a valid Jordan Curve. Make sure that no segments '
+      'are intersecting')
 
   def patch(self,*args,**kwargs):
     return PolygonPatch(self,*args,**kwargs)
@@ -129,177 +139,4 @@ class Domain(Polygon):
 
     return out
 
-timer = Timer()
-def io_check(fin):
-  def fout(self,*args):
-    if len(args) == 2:
-      is_edge = False
-      xy_list = args[0]
-      uv_list = args[1]
-
-    elif len(args) == 1:
-      edge = args[0]  
-      is_edge = isinstance(edge,Edge)
-      if is_edge:
-        edge = [edge]
-
-      xy_list = np.array([e.xy1 for e in edge]) 
-      uv_list = np.array([e.uv for e in edge]) 
-
-    out = fin(self,xy_list,uv_list)
-    if is_edge:
-      out = out[0]
-
-    return out
-
-  fout.__name__ = fin.__name__
-  fout.__doc__ = fin.__doc__
-  return fout
-
-class TopologyError(Exception):
-  def __init__(self,val):
-    self.val = val
-
-  def __str__(self):
-    return self.val
-
-class Edge(object):
-  def __init__(self,xy1,xy2):
-    self.xy1 = np.asarray(xy1)
-    self.xy2 = np.asarray(xy2)
-    self.uv = self.xy2 - self.xy1
-
-  @io_check
-  def is_parallel(self,xy_list,uv_list):
-    '''
-    returns True when edge is parallel to self
-    '''
-    a = np.cross(uv_list,self.uv)
-    cond1 = (a == 0)          
-    return cond1
-
-  @io_check
-  def is_collinear(self,xy_list,uv_list):
-    '''
-    returns True when edge is collinear with self
-    '''
-    a = np.cross(xy_list-self.xy1,self.uv)             
-    cond1 = self.is_parallel(xy_list,uv_list)
-    cond2 = (a == 0)
-    return cond1 & cond2
-
-  @io_check
-  def is_overlapping(self,xy_list,uv_list):
-    '''
-    returns True if there is a finite width of overlap between edge and self.
-    Overlapping vertices do not count as an overlap
-    '''
-    a = np.sum((xy_list-self.xy1)*self.uv,1)
-    b = np.sum((self.xy1-xy_list)*uv_list,1)
-    c = np.dot(self.uv,self.uv)
-    d = np.sum(uv_list*uv_list,1)
-    cond1 = self.is_collinear(xy_list,uv_list)
-    cond2 = (a > 0) & (a < c)
-    cond3 = (b > 0) & (b < d)
-    return cond1 & (cond2 | cond3)
-      
-
-  @io_check
-  def is_intersecting(self,xy_list,uv_list):
-    '''
-    returns True if there is any point intersection between edge and self.
-    Overlapping vertices does not count as an intersection.
-    '''
-    cond1 = self.is_parallel(xy_list,uv_list) == False
-    xy_list = xy_list[cond1]
-    uv_list = uv_list[cond1]
-
-    a = np.cross(xy_list-self.xy1,uv_list)
-    b = np.cross(self.xy1-xy_list,self.uv)
-    c = np.cross(self.uv,uv_list)
-    t = a/c
-    u = -b/c
-    cond2 = (t >= 0.0) & (t <= 1.0) & (u >= 0.0) & (u <= 1.0)
-    cond1[cond1] = cond2
-    return cond1
-
-  @io_check
-  def intersection(self,xy_list,uv_list):
-    '''
-    returns the point of intersection between edge and self if it exists
-    '''
-    if any(self.is_intersecting(xy_list,uv_list) == False):
-      raise TopologyError('an intersection point does not exist')
-
-    a = np.cross(xy_list-self.xy1,uv_list)
-    b = np.cross(self.xy1-xy_list,self.uv)    
-    c = np.cross(self.uv,uv_list)
-    d = np.cross(uv_list,self.uv) 
-    t = a/c
-    u = b/d
-    return self.xy1 + t[:,None]*self.uv
-
-class JordanCurve(object):
-  def __init__(self,points):
-    points = np.asarray(points)
-    assert len(np.shape(points)) == 2
-    assert np.shape(points)[1] == 2
-    N = np.shape(points)[0]
-    self.edges = []
-    for i in range(1,N):
-      e = Edge(points[i-1,:],points[i,:])
-      if i > 1:
-        if any(e.is_overlapping(self.edges)):
-          raise TopologyError('creating an edge with points %s and %s causes '
-                              'an overlap' % (points[i-1],points[i]))
-
-      if (i > 2):
-        if any(e.is_intersecting(self.edges[:-1])):
-          raise TopologyError('creating an edge with points %s and %s causes '
-                              'an intersection' % (points[i-1],points[i]))
-
-      self.edges += [e]
-
-    e = Edge(points[-1,:],points[0,:])
-    if any(e.is_overlapping(self.edges)):
-      raise TopologyError('creating an edge with points %s and %s causes an '
-                          'overlap' % (points[-1],points[0]))
-
-    if any(e.is_intersecting(self.edges[1:-1])):
-      raise TopologyError('creating an edge with points %s and %s causes an '
-                          'intersection' % (points[-1],points[0]))
-
-    self.edges += [e]
-
-    self.x = np.array([e.xy1[0] for e in self.edges]+[self.edges[0].xy1[0]])
-    self.y = np.array([e.xy1[1] for e in self.edges]+[self.edges[0].xy1[1]])
-    edge_length = np.sqrt(np.diff(self.x)**2 + np.diff(self.y)**2)
-    total_length = np.array([np.sum(edge_length[:i]) for i in range(N+1)])
-    t = total_length/total_length[-1]               
-    self.xinterp = interp1d(t,self.x)
-    self.yinterp = interp1d(t,self.y)
-
-  def contains(self,points,outside=None):
-    if outside is None:
-      outside = [1e10,1e10]
-
-    if len(np.shape(points)) == 1:
-      line = Edge(outside,point)
-      count = np.sum(line.is_intersecting(self.edges))
-      return  bool(count%2)
-
-    else:
-      out = np.zeros(len(points))
-      for idx,p in enumerate(points):
-        line = Edge(outside,p)
-        count = np.sum(line.is_intersecting(self.edges))
-        out[idx] = count%2
-
-      return out.astype(bool)
-
-  def __call__(self,t):
-    return np.array([self.xinterp(t),self.yinterp(t)]).transpose()
-
-
-    
 
