@@ -35,6 +35,11 @@ class Prime(object):
     return out
 
 class Halton(object):
+  '''
+  A class which produces a Halton sequence when called and 
+  remembers the state of the sequence so that repeated calls
+  produce the next items in the sequence.
+  ''' 
   def __init__(self,dim=1,start=0,skip=1):
     self.count = start
     self.skip = skip

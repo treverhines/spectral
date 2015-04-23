@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 import numpy as np
 from misc import Timer
+from misc import listify
 from scipy.interpolate import interp1d
 from shapely.geometry import Polygon
 from shapely.geometry import Point
@@ -9,16 +10,6 @@ from descartes import PolygonPatch
 
 import logging
 logger = logging.getLogger(__name__)
-
-def listify(a):
-  out = []
-  for i in a:
-    if hasattr(i,'__iter__'):
-      out += [listify(i)]
-    else:
-      out += [i]
-
-  return out
   
 def nearest(x):
   '''                                                                                                              
@@ -43,6 +34,7 @@ def nearest(x):
 
   return nearest_dist,nearest_idx
 
+
 class NodeCollection(dict):
   '''
   keeps track of nodes groups and their indices
@@ -61,6 +53,7 @@ class NodeCollection(dict):
 
     old_indices = self.get(name,np.zeros(0,dtype=int))
     self[name] = np.concatenate((old_indices,new_indices))
+
 
 class Domain(Polygon):
   def __init__(self,ext_curves,
@@ -114,19 +107,42 @@ class Domain(Polygon):
   
     Polygon.__init__(self,ext_coords,int_poly)        
     assert self.is_valid, (
-      'domain is not a valid Jordan Curve. Make sure that no segments '
+      'domain is not a valid curve. Make sure that no segments '
       'are intersecting')
 
   def patch(self,*args,**kwargs):
     return PolygonPatch(self,*args,**kwargs)
 
-  def contains(self,points):
+  def contains(self,points,tol=None):
+    '''
+    tol gives a buffer area
+    '''
     out = np.zeros(len(points))
-    for idx,val in enumerate(points):
-      p = Point(val)
-      out[idx] = Polygon.contains(self,p)
-    
-    return out.astype(bool)
+    if tol is not None:
+      is_pos = tol > 0
+      line_buffers = []
+      for c in self.curves.itervalues():
+        line_buffers += [c.buffer(abs(tol))]
+
+      for idx,val in enumerate(points):
+        p = Point(val)
+        in_buffers = any(l.contains(p) for l in line_buffers)
+        in_polygon = Polygon.contains(self,p)
+        if is_pos:
+          result = in_polygon | in_buffers
+        else:
+          result = in_polygon & (not in_buffers)
+
+        out[idx] = result
+
+      return out.astype(bool)
+
+    else:
+      for idx,val in enumerate(points):
+        p = Point(val)
+        out[idx] = Polygon.contains(self,p)
+
+      return out.astype(bool)
 
   def __call__(self,t,name):
     if hasattr(t,'__iter__'):
