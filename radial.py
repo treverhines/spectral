@@ -38,7 +38,7 @@ class RBF(object):
     self.R_expr = expr
     self.diff_dict = {}
 
-  def __call__(self,x,c,eps=None,diff=None):
+  def __call__(self,x,c,eps=None,diff=None,dtype=np.float64):
     '''
     evaluates M radial basis functions (RBFs) with arbitary dimension
     at N points.
@@ -72,8 +72,11 @@ class RBF(object):
       than once in the Python session.
 
     ''' 
-    x = np.asarray(x)
-    c = np.asarray(c)   
+    x = np.asarray(x,dtype=dtype)
+    c = np.asarray(c,dtype=dtype)
+    if eps is not None:
+      eps = np.asarray(eps,dtype=dtype)
+   
     xshape = np.shape(x)
     cshape = np.shape(c)
     assert (len(xshape) == 1) | (len(xshape) == 2), (
@@ -100,9 +103,8 @@ class RBF(object):
       'have the same length')
     dim = np.shape(x)[2]
     if eps is None:
-      eps = np.ones(M)
+      eps = np.ones(M,dtype=dtype)
 
-    eps = np.asarray(eps)
     assert len(np.shape(eps)) == 1, (
       'eps must be a 1D array')
 
@@ -150,7 +152,8 @@ class RBFInterpolant(object):
                eps, 
                value=None,
                alpha=None,
-               rbf=None):
+               rbf=None,
+               dtype=np.float64):
     '''
     Initiates the RBF interpolant
 
@@ -170,14 +173,20 @@ class RBFInterpolant(object):
       rbf: type of rbf to use. either mq, ga, or iq
 
     '''
+    x = np.asarray(x,dtype=dtype)
+    eps = np.asarray(eps,dtype=dtype)
+    if value is not None:
+      value = np.asarray(value,dtype=dtype)
+
+    if alpha is not None:
+      alpha = np.asarray(alpha,dtype=dtype)
+
     if rbf is None:
       rbf = mq
 
     assert (value is not None) != (alpha is not None), (
       'either val or alpha must be given')
 
-    x = np.asarray(x)
-    eps = np.asarray(eps)
     x_shape = np.shape(x)
     N = x_shape[0]
     assert len(x_shape) <= 2
@@ -187,7 +196,6 @@ class RBFInterpolant(object):
       x = x[:,None]
 
     if alpha is not None:
-      alpha = np.asarray(alpha)
       alpha_shape = np.shape(alpha)
       assert len(alpha_shape) <= 2
       assert alpha_shape[0] == N
@@ -198,7 +206,6 @@ class RBFInterpolant(object):
       R = alpha_shape[1]
    
     if value is not None:
-      value = np.asarray(value)
       value_shape = np.shape(value)
       assert len(value_shape) <= 2
       assert value_shape[0] == N
@@ -209,11 +216,12 @@ class RBFInterpolant(object):
       R = value_shape[1]
 
     if alpha is None:
-      alpha = np.zeros((N,R))
-      G = rbf(x,x,eps)
+      alpha = np.zeros((N,R),dtype=dtype)
+      G = rbf(x,x,eps,dtype=dtype)
       for r in range(R):
         alpha[:,r] = np.linalg.solve(G,value[:,r])
 
+    self.dtype = dtype
     self.x = x
     self.eps = eps
     self.alpha = alpha
@@ -238,12 +246,14 @@ class RBFInterpolant(object):
         the first derivative in the third dimension.
 
     '''
-    out = np.zeros((len(xitp),self.R))
+    out = np.zeros((len(xitp),self.R),dtype=self.dtype)
+    xitp = np.asarray(xitp,dtype=self.dtype)
     for r in range(self.R):
       out[:,r] = np.sum(self.rbf(xitp,
                                  self.x,
                                  self.eps,
-                                 diff=diff)*self.alpha[:,r],1)
+                                 diff=diff,
+                                 dtype=self.dtype)*self.alpha[:,r],1)
 
     return out 
 

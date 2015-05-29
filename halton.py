@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 from __future__ import division
 import numpy as np
+from misc import funtime
 
 class Prime(object):
   '''
@@ -67,7 +68,7 @@ class Halton(object):
     -------
       (N,dim) array of elements from the Halton sequence
     '''
-    out = halton(N,self.dim,self.count,self.skip)
+    out = halton_fast(N,self.dim,self.count,self.skip)
     self.count += N*self.skip    
     return out
 
@@ -96,9 +97,6 @@ def halton(N,dim=1,start=0,skip=1):
   return out
 
 
-
-      
-    
   
 
 
