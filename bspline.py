@@ -9,15 +9,38 @@ def _is_sorted(x):
   return all(x[i] <= x[i+1] for i in xrange(N))
   
 
-def augmented_knots(knots,p):
+def augmented_knots(knots,p,side='both'):
   assert len(knots) >= 2,(
     'at least two knots must be given')
 
-  left = np.repeat(knots[0],p)
-  right = np.repeat(knots[-1],p)
-  knots = np.concatenate((left,knots,right))
+  if (side == 'left') | (side == 'both'):
+    left = np.repeat(knots[0],p)
+    knots = np.concatenate((left,knots))
+
+  if (side == 'right') | (side == 'both'):
+    right = np.repeat(knots[-1],p)    
+    knots = np.concatenate((knots,right))
+
   return knots
   
+
+def natural_knots(nmax,p,side='both'):
+  if side == 'both':
+    k = np.linspace(0,1,nmax - p + 1)  
+    return augmented_knots(k,p,side)
+
+  if (side == 'left') | (side == 'right'):
+    k = np.linspace(0,1,nmax + 1)  
+    return augmented_knots(k,p,side)
+
+  if (side == 'none'):
+    k = np.linspace(0,1,nmax + p + 1)  
+    return k
+    
+
+def basis_number(k,p):
+  return len(k) - p - 1 
+
 
 def bspline_1d(x,k,n,p,diff=0):
   '''
@@ -31,14 +54,14 @@ def bspline_1d(x,k,n,p,diff=0):
     p: B-spline order (0 is a step function)
 
   '''
-  assert type(n) is int,(
-    'spline order must be an integer')
+  #assert type(n) is int,(
+  #  'spline order must be an integer')
 
-  assert type(p) is int,(
-    'spline index must be an integer')
+  #assert type(p) is int,(
+  #  'spline index must be an integer')
 
-  assert type(diff) is int,(
-    'derivative must be an integer')
+  #assert type(diff) is int,(
+  #  'derivative must be an integer')
 
   assert p >= 0,(
     'received a negative spline order')
@@ -99,35 +122,37 @@ def bspline_1d(x,k,n,p,diff=0):
 
     return b1 - b2
 
+
 def bspline_nd(x,k,n,p,diff=None):
   '''
   returns an N-D B-spline which is the tensor product of 1-D B-splines
+  The arguments for this function should all be length N sequences and
+  each element will be passed to bspline_1d 
 
   Parameters
   ----------
 
-    x: points where the b spline will be evaluated this is a (*,N)
-      array, where N is the number of spatial dimensions
+    x: points where the b spline will be evaluated 
 
-    k: knots for each dimension. This is a sequence with length N,
-      where each element is a list containing the knots for each spatial
-      dimension
+    k: knots for each dimension
 
-    n: length N sequence where each element is an integer indicating the 
-      B-splines index for each spatial dimension  
+    n: B-spline index
 
     p: order of the B-spline (0 is a step function) 
 
   '''
+  x = np.transpose(x)
+
   d = len(n)
   if diff is None:
     diff = (0,)*d
+  assert ((len(x) == len(k)) & 
+          (len(x) == len(n)) & 
+          (len(x) == len(p)) &
+          (len(x) == len(diff)))
 
-  val = [bspline_1d(x[:,i],k[:,i],n[i],p,diff=diff[i]) for i in range(d)]
+  val = [bspline_1d(a,b,c,d,e) for a,b,c,d,e in zip(x,k,n,p,diff)]
   return np.prod(val,0)
-
-def cardinal_bspline(x):
-  pass 
 
 
 
