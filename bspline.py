@@ -23,7 +23,6 @@ def augmented_knots(knots,p,side='both'):
 
   return knots
   
-
 def natural_knots(nmax,p,side='both'):
   if side == 'both':
     k = np.linspace(0,1,nmax - p + 1)  
